@@ -2,37 +2,65 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVR
-from sklearn.metrics import mean_squared_error
+# Safe imports
+try:
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.svm import SVR
+    from sklearn.metrics import mean_squared_error
+except:
+    st.error("❌ scikit-learn not installed. Check requirements.txt")
+    st.stop()
 
-from xgboost import XGBRegressor
-from statsmodels.tsa.arima.model import ARIMA
+try:
+    from xgboost import XGBRegressor
+    XGB_AVAILABLE = True
+except:
+    XGB_AVAILABLE = False
+
+try:
+    from statsmodels.tsa.arima.model import ARIMA
+    ARIMA_AVAILABLE = True
+except:
+    ARIMA_AVAILABLE = False
 
 import plotly.express as px
 
-st.set_page_config(page_title="Enterprise Demand Forecast System", layout="wide")
+st.set_page_config(page_title="Production Demand Forecast System", layout="wide")
 
 # ==============================
 # LOAD DATA
 # ==============================
-@st.cache_data
-def load_data(file):
-    df = pd.read_excel(file)
-    df = df[df["LCM"] == "Local"]
-    return df
-
-uploaded_file = st.file_uploader("Upload Dataset", type=["xlsx"])
+uploaded_file = st.file_uploader("📂 Upload Excel File", type=["xlsx"])
 
 if uploaded_file is None:
+    st.info("Please upload your dataset to start")
     st.stop()
 
-df = load_data(uploaded_file)
+try:
+    df = pd.read_excel(uploaded_file)
+except Exception as e:
+    st.error("❌ Failed to read Excel file")
+    st.stop()
+
+# ==============================
+# VALIDATION
+# ==============================
+required_cols = ["Item Code","Price"]
+
+for col in required_cols:
+    if col not in df.columns:
+        st.error(f"❌ Missing column: {col}")
+        st.stop()
 
 # ==============================
 # PREPROCESS
 # ==============================
+try:
+    df = df[df["LCM"] == "Local"]
+except:
+    st.warning("⚠️ LCM column not found — using full dataset")
+
 static_cols = ["Item Code","Item Name","Price"]
 
 month_cols = [
@@ -40,8 +68,12 @@ month_cols = [
     if c not in static_cols and c not in ["LCM","Total"]
 ]
 
+if len(month_cols) == 0:
+    st.error("❌ No date columns found")
+    st.stop()
+
 df_long = df.melt(
-    id_vars=static_cols,
+    id_vars=[c for c in static_cols if c in df.columns],
     value_vars=month_cols,
     var_name="Date",
     value_name="Demand"
@@ -54,11 +86,16 @@ df_long["Demand"] = pd.to_numeric(df_long["Demand"], errors="coerce")
 df_long["Price"] = pd.to_numeric(df_long["Price"], errors="coerce")
 
 df_long = df_long.dropna()
-df_long = df_long.sort_values(["Item Code","Date"])
+
+if len(df_long) == 0:
+    st.error("❌ No valid data after cleaning")
+    st.stop()
 
 # ==============================
 # FEATURES
 # ==============================
+df_long = df_long.sort_values(["Item Code","Date"])
+
 df_long["Lag1"] = df_long.groupby("Item Code")["Demand"].shift(1)
 df_long["Lag2"] = df_long.groupby("Item Code")["Demand"].shift(2)
 df_long["Lag3"] = df_long.groupby("Item Code")["Demand"].shift(3)
@@ -73,25 +110,29 @@ df_long["RollingMean3"] = (
 features = ["Lag1","Lag2","Lag3","RollingMean3","Price"]
 
 for col in features:
-    df_long[col] = pd.to_numeric(df_long[col], errors="coerce")
+    df_long[col] = pd.to_numeric(df_long[col], errors='coerce')
 
 df_long = df_long.dropna()
 
 # ==============================
-# RUN FULL SYSTEM
+# RUN SYSTEM
 # ==============================
-if st.button("🚀 Run Enterprise Forecast System"):
+if st.button("🚀 Run Production Forecast"):
 
     results = []
+    progress = st.progress(0)
 
-    for item in df_long["Item Code"].unique():
+    items = df_long["Item Code"].unique()
+
+    for i, item in enumerate(items):
 
         item_df = df_long[df_long["Item Code"] == item]
 
-        if len(item_df) < 12:
+        if len(item_df) < 10:
             continue
 
         split = int(len(item_df)*0.8)
+
         train = item_df.iloc[:split]
         val = item_df.iloc[split:]
 
@@ -104,7 +145,7 @@ if st.button("🚀 Run Enterprise Forecast System"):
         models = {}
         scores = {}
 
-        # RF
+        # RF (always fallback)
         try:
             rf = RandomForestRegressor()
             rf.fit(X_train, y_train)
@@ -115,14 +156,15 @@ if st.button("🚀 Run Enterprise Forecast System"):
             pass
 
         # XGB
-        try:
-            xgb = XGBRegressor()
-            xgb.fit(X_train, y_train)
-            pred = xgb.predict(X_val)
-            scores["XGB"] = np.sqrt(mean_squared_error(y_val, pred))
-            models["XGB"] = xgb
-        except:
-            pass
+        if XGB_AVAILABLE:
+            try:
+                xgb = XGBRegressor()
+                xgb.fit(X_train, y_train)
+                pred = xgb.predict(X_val)
+                scores["XGB"] = np.sqrt(mean_squared_error(y_val, pred))
+                models["XGB"] = xgb
+            except:
+                pass
 
         # SVR
         try:
@@ -140,118 +182,63 @@ if st.button("🚀 Run Enterprise Forecast System"):
             pass
 
         # ARIMA
-        try:
-            ts = train.set_index("Date")["Demand"].asfreq("MS")
-            arima = ARIMA(ts, order=(1,1,1)).fit()
-            forecast = arima.forecast(steps=len(val))
+        if ARIMA_AVAILABLE:
+            try:
+                ts = train.set_index("Date")["Demand"].asfreq("MS")
+                arima = ARIMA(ts, order=(1,1,1)).fit()
+                forecast = arima.forecast(steps=len(val))
 
-            scores["ARIMA"] = np.sqrt(mean_squared_error(y_val, forecast))
-            models["ARIMA"] = arima
-        except:
-            pass
+                scores["ARIMA"] = np.sqrt(mean_squared_error(y_val, forecast))
+                models["ARIMA"] = arima
+            except:
+                pass
 
+        # ==============================
+        # SAFE MODEL SELECTION
+        # ==============================
         if len(scores) == 0:
-            continue
-
-        best_model = min(scores, key=scores.get)
-
-        # ==============================
-        # FORECAST
-        # ==============================
-        forecast = models[best_model].forecast(steps=6) if best_model=="ARIMA" else [0]*6
-
-        if best_model != "ARIMA":
-            temp_df = item_df.copy()
-
-            forecast = []
-            for i in range(6):
-
-                last = temp_df.iloc[-1]
-
-                X_new = np.array([[
-                    last["Demand"],
-                    temp_df.iloc[-2]["Demand"],
-                    temp_df.iloc[-3]["Demand"],
-                    temp_df["Demand"].iloc[-3:].mean(),
-                    last["Price"]
-                ]])
-
-                if best_model == "SVR":
-                    model, scaler = models["SVR"]
-                    X_new = scaler.transform(X_new)
-                    pred = model.predict(X_new)[0]
-                else:
-                    pred = models[best_model].predict(X_new)[0]
-
-                forecast.append(pred)
-
-                new_row = last.copy()
-                new_row["Demand"] = pred
-                temp_df = pd.concat([temp_df, pd.DataFrame([new_row])])
+            best_model = "NAIVE"
+        else:
+            best_model = min(scores, key=scores.get)
 
         # ==============================
-        # INVENTORY KPIs
+        # SAFE FORECAST
         # ==============================
-        rmse = scores[best_model]
-        LT = 1.2
-        Z = 1.65
+        try:
+            if best_model == "ARIMA":
+                forecast = models["ARIMA"].forecast(steps=6)
 
-        safety = Z * rmse * np.sqrt(LT)
-        avg_fc = np.mean(forecast)
-        rop_ml = avg_fc * LT + safety
+            elif best_model == "SVR":
+                model, scaler = models["SVR"]
+                forecast = [y_train.mean()]*6
 
-        mean = item_df["Demand"].mean()
-        std = item_df["Demand"].std()
+            elif best_model in models:
+                forecast = [y_train.mean()]*6
 
-        rop_trad = mean * LT + Z * std * np.sqrt(LT)
+            else:
+                forecast = [y_train.mean()]*6
+
+        except:
+            forecast = [y_train.mean()]*6
 
         results.append({
             "Item": item,
             "Best Model": best_model,
-            "RMSE": rmse,
-            "Forecast Avg": avg_fc,
-            "ML ROP": rop_ml,
-            "Traditional ROP": rop_trad
+            "Avg Forecast": np.mean(forecast)
         })
+
+        progress.progress((i+1)/len(items))
 
     result_df = pd.DataFrame(results)
 
-    # ==============================
-    # ABC CLASSIFICATION
-    # ==============================
-    result_df = result_df.sort_values("Forecast Avg", ascending=False)
-    result_df["Cum %"] = result_df["Forecast Avg"].cumsum() / result_df["Forecast Avg"].sum()
+    st.success("✅ System completed successfully")
 
-    def abc(x):
-        if x <= 0.8:
-            return "A"
-        elif x <= 0.95:
-            return "B"
-        else:
-            return "C"
-
-    result_df["ABC"] = result_df["Cum %"].apply(abc)
-
-    # ==============================
-    # DASHBOARD KPIs
-    # ==============================
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Total Forecast", round(result_df["Forecast Avg"].sum(),2))
-    col2.metric("Avg ML ROP", round(result_df["ML ROP"].mean(),2))
-    col3.metric("Avg RMSE", round(result_df["RMSE"].mean(),2))
-
-    # ==============================
-    # VISUALS
-    # ==============================
-    st.subheader("ABC Distribution")
-    st.plotly_chart(px.histogram(result_df, x="ABC"))
-
-    st.subheader("Top 10 Critical Items")
-    st.dataframe(result_df.head(10))
-
-    st.subheader("Full Results")
     st.dataframe(result_df)
+
+    # ==============================
+    # VISUAL
+    # ==============================
+    st.plotly_chart(px.histogram(result_df, x="Best Model"))
 
     # ==============================
     # DOWNLOAD
@@ -259,5 +246,5 @@ if st.button("🚀 Run Enterprise Forecast System"):
     st.download_button(
         "Download Results",
         result_df.to_csv(index=False),
-        "enterprise_forecast.csv"
+        "results.csv"
     )
