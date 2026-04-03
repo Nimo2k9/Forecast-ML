@@ -5,58 +5,59 @@ import time
 
 st.set_page_config(page_title="Snake Game", layout="centered")
 
-# ==============================
-# SETTINGS
-# ==============================
 GRID_SIZE = 20
-GAME_SPEED = 0.25
+GAME_SPEED = 0.3   # slower = more reliable input
 
-st.title("🐍 Snake Game (Button Controlled)")
+st.title("🐍 Snake Game (Improved Controls)")
 
 # ==============================
-# SAFE INITIALIZATION
+# INIT
 # ==============================
 def init():
-    if "snake" not in st.session_state:
-        st.session_state.snake = [(10, 10)]
-    if "direction" not in st.session_state:
-        st.session_state.direction = (0, 1)
-    if "next_direction" not in st.session_state:
-        st.session_state.next_direction = (0, 1)
-    if "food" not in st.session_state:
-        st.session_state.food = (
-            random.randint(0, GRID_SIZE-1),
-            random.randint(0, GRID_SIZE-1)
-        )
-    if "score" not in st.session_state:
-        st.session_state.score = 0
-    if "game_over" not in st.session_state:
-        st.session_state.game_over = False
+    defaults = {
+        "snake": [(10, 10)],
+        "direction": (0, 1),
+        "next_direction": (0, 1),
+        "food": (random.randint(0, GRID_SIZE-1), random.randint(0, GRID_SIZE-1)),
+        "score": 0,
+        "game_over": False,
+        "last_input_time": 0
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
 init()
 
 # ==============================
-# 🎮 CONTROLS
+# 🎮 CONTROLS (IMPROVED)
 # ==============================
 st.markdown("### 🎮 Controls")
 
-c1, c2, c3 = st.columns([1,1,1])
-with c2:
-    if st.button("⬆️ Up"):
-        st.session_state.next_direction = (-1, 0)
+def set_direction(new_dir):
+    # prevent spam clicks overriding too fast
+    now = time.time()
+    if now - st.session_state.last_input_time > 0.05:
+        st.session_state.next_direction = new_dir
+        st.session_state.last_input_time = now
 
-c1, c2, c3 = st.columns([1,1,1])
+c1, c2, c3 = st.columns(3)
+with c2:
+    if st.button("⬆️"):
+        set_direction((-1, 0))
+
+c1, c2, c3 = st.columns(3)
 with c1:
-    if st.button("⬅️ Left"):
-        st.session_state.next_direction = (0, -1)
+    if st.button("⬅️"):
+        set_direction((0, -1))
 with c3:
-    if st.button("➡️ Right"):
-        st.session_state.next_direction = (0, 1)
+    if st.button("➡️"):
+        set_direction((0, 1))
 
-c1, c2, c3 = st.columns([1,1,1])
+c1, c2, c3 = st.columns(3)
 with c2:
-    if st.button("⬇️ Down"):
-        st.session_state.next_direction = (1, 0)
+    if st.button("⬇️"):
+        set_direction((1, 0))
 
 # ==============================
 # APPLY DIRECTION
@@ -64,7 +65,6 @@ with c2:
 dx, dy = st.session_state.direction
 ndx, ndy = st.session_state.next_direction
 
-# prevent reverse movement
 if (dx, dy) != (-ndx, -ndy):
     st.session_state.direction = (ndx, ndy)
 
@@ -77,7 +77,6 @@ if not st.session_state.game_over:
 
     new_head = (head[0] + dx, head[1] + dy)
 
-    # collision
     if (
         new_head[0] < 0 or new_head[0] >= GRID_SIZE or
         new_head[1] < 0 or new_head[1] >= GRID_SIZE or
@@ -97,7 +96,7 @@ if not st.session_state.game_over:
             st.session_state.snake.pop()
 
 # ==============================
-# 🎨 DRAW GRID (FIXED GRAPHICS)
+# 🎨 DRAW GRID
 # ==============================
 grid_html = "<div style='display:inline-block; background:#111; padding:10px;'>"
 
@@ -128,7 +127,6 @@ for i in range(GRID_SIZE):
 
 grid_html += "</div>"
 
-# ✅ KEY FIX: render with components
 components.html(grid_html, height=500)
 
 # ==============================
@@ -147,7 +145,7 @@ if st.session_state.game_over:
         st.rerun()
 
 # ==============================
-# GAME LOOP
+# LOOP
 # ==============================
 time.sleep(GAME_SPEED)
 st.rerun()
