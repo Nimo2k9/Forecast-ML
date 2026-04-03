@@ -1,142 +1,142 @@
 import streamlit as st
-import streamlit.components.v1 as components
+import random
+import time
 
 st.set_page_config(page_title="Snake Game", layout="centered")
 
-st.title("🐍 Snake Game (Graphics Version)")
+# ==============================
+# SETTINGS
+# ==============================
+GRID_SIZE = 20
+GAME_SPEED = 0.2
 
-html_code = """
-<!DOCTYPE html>
-<html>
-<head>
-<style>
-body {
-    text-align: center;
-    background-color: #111;
-    color: white;
-}
-canvas {
-    background-color: black;
-    border: 3px solid #00ffcc;
-}
-</style>
-</head>
-<body>
+st.title("🐍 Snake Game (Button Control)")
 
-<h3>Use Arrow Keys ⬅️➡️⬆️⬇️</h3>
-<canvas id="game" width="400" height="400"></canvas>
+# ==============================
+# INIT SESSION STATE
+# ==============================
+if "snake" not in st.session_state:
+    st.session_state.snake = [(10, 10)]
+    st.session_state.direction = (0, 1)
+    st.session_state.next_direction = (0, 1)
+    st.session_state.food = (random.randint(0, GRID_SIZE-1), random.randint(0, GRID_SIZE-1))
+    st.session_state.score = 0
+    st.session_state.game_over = False
 
-<script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+# ==============================
+# 🎮 CONTROL PANEL
+# ==============================
+st.markdown("### 🎮 Controls")
 
-const grid = 20;
-let count = 0;
+c1, c2, c3 = st.columns([1,1,1])
+with c2:
+    if st.button("⬆️ Up"):
+        st.session_state.next_direction = (-1, 0)
 
-let snake = {
-    x: 160,
-    y: 160,
-    dx: grid,
-    dy: 0,
-    cells: [],
-    maxCells: 4
-};
+c1, c2, c3 = st.columns([1,1,1])
+with c1:
+    if st.button("⬅️ Left"):
+        st.session_state.next_direction = (0, -1)
+with c3:
+    if st.button("➡️ Right"):
+        st.session_state.next_direction = (0, 1)
 
-let apple = {
-    x: 320,
-    y: 320
-};
+c1, c2, c3 = st.columns([1,1,1])
+with c2:
+    if st.button("⬇️ Down"):
+        st.session_state.next_direction = (1, 0)
 
-let score = 0;
+# ==============================
+# APPLY DIRECTION (SAFE TURN)
+# ==============================
+dx, dy = st.session_state.direction
+ndx, ndy = st.session_state.next_direction
 
-function getRandomInt(min, max) {
-    return Math.floor(Math.random() * (max - min)) + min;
-}
+# prevent reverse movement
+if (dx, dy) != (-ndx, -ndy):
+    st.session_state.direction = (ndx, ndy)
 
-document.addEventListener("keydown", function(e) {
-    if (e.key === "ArrowLeft" && snake.dx === 0) {
-        snake.dx = -grid;
-        snake.dy = 0;
-    } else if (e.key === "ArrowUp" && snake.dy === 0) {
-        snake.dy = -grid;
-        snake.dx = 0;
-    } else if (e.key === "ArrowRight" && snake.dx === 0) {
-        snake.dx = grid;
-        snake.dy = 0;
-    } else if (e.key === "ArrowDown" && snake.dy === 0) {
-        snake.dy = grid;
-        snake.dx = 0;
-    }
-});
+# ==============================
+# GAME LOGIC
+# ==============================
+if not st.session_state.game_over:
+    head = st.session_state.snake[0]
+    dx, dy = st.session_state.direction
 
-function gameLoop() {
-    requestAnimationFrame(gameLoop);
+    new_head = (head[0] + dx, head[1] + dy)
 
-    if (++count < 5) return;
-    count = 0;
+    # collision check
+    if (
+        new_head[0] < 0 or new_head[0] >= GRID_SIZE or
+        new_head[1] < 0 or new_head[1] >= GRID_SIZE or
+        new_head in st.session_state.snake
+    ):
+        st.session_state.game_over = True
+    else:
+        st.session_state.snake.insert(0, new_head)
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+        # food eaten
+        if new_head == st.session_state.food:
+            st.session_state.score += 1
+            st.session_state.food = (
+                random.randint(0, GRID_SIZE-1),
+                random.randint(0, GRID_SIZE-1)
+            )
+        else:
+            st.session_state.snake.pop()
 
-    snake.x += snake.dx;
-    snake.y += snake.dy;
+# ==============================
+# 🎨 DRAW GRID (GRAPHICS)
+# ==============================
+grid_html = "<div style='display:inline-block; background:#111; padding:10px;'>"
 
-    // wall wrap
-    if (snake.x < 0) snake.x = canvas.width - grid;
-    else if (snake.x >= canvas.width) snake.x = 0;
+for i in range(GRID_SIZE):
+    row_html = "<div style='display:flex;'>"
+    for j in range(GRID_SIZE):
 
-    if (snake.y < 0) snake.y = canvas.height - grid;
-    else if (snake.y >= canvas.height) snake.y = 0;
+        color = "#222"  # empty
 
-    snake.cells.unshift({x: snake.x, y: snake.y});
+        if (i, j) == st.session_state.food:
+            color = "red"
+        elif (i, j) == st.session_state.snake[0]:
+            color = "#00ffcc"  # head
+        elif (i, j) in st.session_state.snake:
+            color = "lime"
 
-    if (snake.cells.length > snake.maxCells) {
-        snake.cells.pop();
-    }
+        row_html += f"""
+        <div style="
+            width:15px;
+            height:15px;
+            background:{color};
+            margin:1px;
+            border-radius:3px;
+        "></div>
+        """
 
-    // draw apple
-    ctx.fillStyle = "red";
-    ctx.fillRect(apple.x, apple.y, grid-1, grid-1);
+    row_html += "</div>"
+    grid_html += row_html
 
-    // draw snake
-    ctx.fillStyle = "lime";
-    snake.cells.forEach(function(cell, index) {
-        ctx.fillRect(cell.x, cell.y, grid-1, grid-1);
+grid_html += "</div>"
 
-        // eat apple
-        if (cell.x === apple.x && cell.y === apple.y) {
-            snake.maxCells++;
-            score++;
+st.markdown(grid_html, unsafe_allow_html=True)
 
-            apple.x = getRandomInt(0, 20) * grid;
-            apple.y = getRandomInt(0, 20) * grid;
-        }
+# ==============================
+# SCORE
+# ==============================
+st.subheader(f"🏆 Score: {st.session_state.score}")
 
-        // collision with self
-        for (let i = index + 1; i < snake.cells.length; i++) {
-            if (cell.x === snake.cells[i].x && cell.y === snake.cells[i].y) {
-                alert("Game Over! Score: " + score);
-                snake.x = 160;
-                snake.y = 160;
-                snake.cells = [];
-                snake.maxCells = 4;
-                snake.dx = grid;
-                snake.dy = 0;
-                score = 0;
-            }
-        }
-    });
+# ==============================
+# GAME OVER
+# ==============================
+if st.session_state.game_over:
+    st.error("💀 Game Over!")
 
-    // score text
-    ctx.fillStyle = "white";
-    ctx.font = "16px Arial";
-    ctx.fillText("Score: " + score, 10, 20);
-}
+    if st.button("🔄 Restart Game"):
+        st.session_state.clear()
+        st.rerun()
 
-requestAnimationFrame(gameLoop);
-</script>
-
-</body>
-</html>
-"""
-
-components.html(html_code, height=500)
+# ==============================
+# AUTO LOOP
+# ==============================
+time.sleep(GAME_SPEED)
+st.rerun()
