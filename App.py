@@ -13,18 +13,29 @@ GAME_SPEED = 0.2
 st.title("🐍 Snake Game (Button Control)")
 
 # ==============================
-# INIT SESSION STATE
+# SAFE INIT FUNCTION
 # ==============================
-if "snake" not in st.session_state:
-    st.session_state.snake = [(10, 10)]
-    st.session_state.direction = (0, 1)
-    st.session_state.next_direction = (0, 1)
-    st.session_state.food = (random.randint(0, GRID_SIZE-1), random.randint(0, GRID_SIZE-1))
-    st.session_state.score = 0
-    st.session_state.game_over = False
+def init_game():
+    if "snake" not in st.session_state:
+        st.session_state.snake = [(10, 10)]
+    if "direction" not in st.session_state:
+        st.session_state.direction = (0, 1)
+    if "next_direction" not in st.session_state:
+        st.session_state.next_direction = (0, 1)
+    if "food" not in st.session_state:
+        st.session_state.food = (
+            random.randint(0, GRID_SIZE-1),
+            random.randint(0, GRID_SIZE-1)
+        )
+    if "score" not in st.session_state:
+        st.session_state.score = 0
+    if "game_over" not in st.session_state:
+        st.session_state.game_over = False
+
+init_game()
 
 # ==============================
-# 🎮 CONTROL PANEL
+# 🎮 CONTROLS
 # ==============================
 st.markdown("### 🎮 Controls")
 
@@ -47,12 +58,12 @@ with c2:
         st.session_state.next_direction = (1, 0)
 
 # ==============================
-# APPLY DIRECTION (SAFE TURN)
+# SAFE DIRECTION UPDATE
 # ==============================
 dx, dy = st.session_state.direction
 ndx, ndy = st.session_state.next_direction
 
-# prevent reverse movement
+# prevent reverse
 if (dx, dy) != (-ndx, -ndy):
     st.session_state.direction = (ndx, ndy)
 
@@ -65,7 +76,6 @@ if not st.session_state.game_over:
 
     new_head = (head[0] + dx, head[1] + dy)
 
-    # collision check
     if (
         new_head[0] < 0 or new_head[0] >= GRID_SIZE or
         new_head[1] < 0 or new_head[1] >= GRID_SIZE or
@@ -75,7 +85,6 @@ if not st.session_state.game_over:
     else:
         st.session_state.snake.insert(0, new_head)
 
-        # food eaten
         if new_head == st.session_state.food:
             st.session_state.score += 1
             st.session_state.food = (
@@ -86,7 +95,7 @@ if not st.session_state.game_over:
             st.session_state.snake.pop()
 
 # ==============================
-# 🎨 DRAW GRID (GRAPHICS)
+# 🎨 DRAW GRID
 # ==============================
 grid_html = "<div style='display:inline-block; background:#111; padding:10px;'>"
 
@@ -94,12 +103,12 @@ for i in range(GRID_SIZE):
     row_html = "<div style='display:flex;'>"
     for j in range(GRID_SIZE):
 
-        color = "#222"  # empty
+        color = "#222"
 
         if (i, j) == st.session_state.food:
             color = "red"
         elif (i, j) == st.session_state.snake[0]:
-            color = "#00ffcc"  # head
+            color = "#00ffcc"
         elif (i, j) in st.session_state.snake:
             color = "lime"
 
@@ -136,7 +145,7 @@ if st.session_state.game_over:
         st.rerun()
 
 # ==============================
-# AUTO LOOP
+# LOOP
 # ==============================
 time.sleep(GAME_SPEED)
 st.rerun()
